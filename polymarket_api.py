@@ -9,9 +9,31 @@ from py_clob_client.clob_types import ApiCreds, OrderArgs, OrderType
 from py_clob_client.constants import POLYGON
 import pandas as pd
 
+import config_manager
+
 # URL de l'API de données de Polymarket
 DATA_API_URL = "https://data-api.polymarket.com"
 CLOB_HOST = "https://clob.polymarket.com"
+
+
+def fetch_wallet_activity(user_address: str, limit: int, offset: int) -> list[dict] | None:   
+    """ 
+    Récupère l'activité (trades) d'un wallet avec pagination.
+    L'API de Polymarket utilise 'limit' et 'offset'.
+    """
+    # NOTE: L'API de Polymarket pourrait avoir besoin d'un endpoint différent pour
+    # obtenir le nombre total de trades (pour st.session_state.total_trades).
+    # Nous allons nous baser sur le nombre de résultats reçus pour l'instant.
+    
+    url = f"{DATA_API_URL}/activity?user={user_address}&limit={limit}&offset={offset}"
+    try:
+        response = requests.get(url, timeout=5)
+        response.raise_for_status() 
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Erreur lors de la récupération de l'activité du wallet {user_address}: {e}")
+        return None
+
 
 
 def start_copy_engine():
@@ -29,18 +51,6 @@ def stop_copy_engine():
     st.rerun()
 
 # --- Fonctions API de Polymarket (Inspirées de nice_funcs.py) ---
-
-def fetch_wallet_activity(user_address: str, limit: int = 10) -> list[dict] | None:
-    """ Récupère les N dernières activités (trades) d'un wallet. """
-    url = f"{DATA_API_URL}/activity?user={user_address}&limit={limit}&offset=0"
-    
-    try:
-        response = requests.get(url, timeout=5)
-        response.raise_for_status() # Lève une exception pour les codes 4xx/5xx
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Erreur lors de la récupération de l'activité du wallet {user_address}: {e}")
-        return None
 
 def fetch_current_trades(wallet_to_copy: str) -> pd.DataFrame:
     """ Récupère les trades en cours (positions) du wallet cible. """

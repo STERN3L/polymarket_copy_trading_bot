@@ -5,6 +5,8 @@ import random
 import polymarket_api 
 import numpy as np
 
+import config_manager
+
 def get_live_trades_data() -> pd.DataFrame:
     """ 
     Récupère les positions actives du wallet cible et construit le tableau pour l'affichage. 
@@ -92,48 +94,54 @@ def get_user_trades_history() -> pd.DataFrame:
     return df.sort_values(by='Date d\'Exécution', ascending=False)
 
 
-def get_target_wallet_activity() -> pd.DataFrame:
+def get_target_wallet_activity(page: int) -> tuple[pd.DataFrame, int]:
     """ 
-    Récupère l'historique récent d'activité (trades) du wallet cible via l'API.
+    Récupère l'historique d'activité du wallet cible pour une page donnée (50 trades/page).
+    Retourne le DataFrame et le nombre total d'activités trouvées.
     """
     wallet_to_copy = st.session_state.wallet_to_copy
     
-    # Limite de 20 activités récentes pour l'affichage
-    activity_data = polymarket_api.fetch_wallet_activity(wallet_to_copy, limit=20)
+    # Calcul de l'offset (décalage)
+    offset = (page - 1) * config_manager.PAGE_SIZE
+    limit = config_manager.PAGE_SIZE
+    
+    # L'appel est maintenant correct pour la nouvelle signature sans valeurs par défaut
+    activity_data = polymarket_api.fetch_wallet_activity(wallet_to_copy, limit=limit, offset=offset)
     
     if not activity_data:
-        return pd.DataFrame({
-            'Statut': ['Aucune activité trouvée ou erreur API.']
-        })
+        # Si la requête échoue ou est vide, on renvoie une structure vide.
+        return pd.DataFrame(), 0 
 
-    # Conversion en DataFrame
     df = pd.DataFrame(activity_data)
     
-    # Filtrer uniquement les vrais trades si possible (l'API renvoie des 'TRADE', 'ADD_LIQUIDITY', etc.)
-    df_trades = df[df['type'] == 'TRADE'].copy()
-
-    if df_trades.empty:
-         return pd.DataFrame({
-            'Statut': ['Aucun trade récent trouvé pour ce wallet.']
-        })
-
+    # On suppose que le nombre total d'éléments dans la base de données 
+    # est au moins égal à l'offset + le nombre d'éléments reçus.
+    total_trades_count = offset + len(activity_data)
+    
     # Traitement des colonnes pour l'affichage
-    # L'API utilise le timestamp UNIX ('timestamp')
-    df_trades['Date/Heure'] = pd.to_datetime(df_trades['timestamp'], unit='s')
+    if not df.empty and 'timestamp' in df.columns:
+        df['Date/Heure'] = pd.to_datetime(df['timestamp'], unit='s')
+        
+        # Filtrer uniquement les trades (pour être pertinent pour le copy trading)
+        df_trades = df[df['type'] == 'TRADE'].copy()
+
+        df_trades = df_trades.rename(columns={
+            'title': 'Nom du Marché',
+            'usdcSize': 'Montant (USDC)',
+            'side': 'Type de Trade (BUY/SELL)',
+            'price': 'Prix Token'
+        })
+        
+        # Triage du plus récent au plus ancien
+        df_trades = df_trades.sort_values(by='Date/Heure', ascending=False)
+        
+        return df_trades[[
+            'Date/Heure', 
+            'Nom du Marché', 
+            'Montant (USDC)', 
+            'Type de Trade (BUY/SELL)', 
+            'Prix Token', 
+            'outcome'
+        ]], total_trades_count
     
-    # Sélection des colonnes pertinentes (celles-ci dépendent de la réponse réelle de l'API)
-    df_trades = df_trades.rename(columns={
-        'title': 'Nom du Marché',
-        'usdcSize': 'Montant (USDC)',
-        'side': 'Type de Trade (BUY/SELL)',
-        'price': 'Prix Token'
-    })
-    
-    return df_trades[[
-        'Date/Heure', 
-        'Nom du Marché', 
-        'Montant (USDC)', 
-        'Type de Trade (BUY/SELL)', 
-        'Prix Token', 
-        'outcome' # Résultat ciblé (YES/NO)
-    ]].sort_values(by='Date/Heure', ascending=False)
+    return pd.DataFrame(), 0

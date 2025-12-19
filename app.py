@@ -4,7 +4,7 @@ import pandas as pd
 import random
 import numpy as np
 from datetime import date, timedelta, datetime 
-
+import time
 
 # Import des modules locaux
 import config_manager
@@ -106,28 +106,100 @@ def render_wallet_config_page():
 
 
 def render_target_monitoring_page():
-    """ Rend la page dédiée à la surveillance du wallet cible. """
+    """ 
+    Surveillance du wallet cible incluant BUY, SELL et REDEEM.
+    """
     st.header("👀 Surveillance du Wallet Cible")
     st.markdown("---")
     
     wallet = st.session_state.wallet_to_copy
-    if wallet == "0x...":
+    if wallet == "0x..." or not wallet:
         st.error("Veuillez configurer l'adresse du Wallet à Copier dans la section 'Configuration des Wallets'.")
         return
 
-    st.info(f"Affichage des 20 dernières activités de type 'TRADE' pour l'adresse : `{wallet}`")
-    
-    # Récupération des données via le data_fetcher
-    df_trades = data_fetcher.get_target_wallet_activity()
+    # --- 1. LOGIQUE DU COMPTEUR VISUEL (30 secondes) ---
+    refresh_interval = 30 
+    status_placeholder = st.empty()
+    time_elapsed = datetime.now() - st.session_state.last_refresh_time
+    seconds_remaining = refresh_interval - int(time_elapsed.total_seconds())
+
+    if seconds_remaining <= 0:
+        st.session_state.last_refresh_time = datetime.now()
+        st.rerun()
+
+    status_placeholder.info(f"🔄 Prochaine actualisation des données dans **{max(0, seconds_remaining)}s**")
+
+    # --- 2. RÉCUPÉRATION DES DONNÉES ---
+    current_page = st.session_state.current_page
+    df_trades, total_trades_count = data_fetcher.get_target_wallet_activity(current_page)
     
     if df_trades.empty:
-        st.warning("Aucune donnée de trade récente disponible. Vérifiez l'adresse ou le statut de l'API.")
+        st.warning(f"Aucune donnée trouvée pour le wallet `{wallet}`.")
     else:
+        # --- 3. DÉFINITION DU STYLE VISUEL ---
+        def style_type(val):
+            """ Style pour BUY, SELL et REDEEM """
+            val_upper = str(val).upper()
+            if val_upper == 'BUY':
+                color = '#28a745' # Vert
+            elif val_upper == 'SELL':
+                color = '#dc3545' # Rouge
+            elif val_upper == 'REDEEM':
+                color = '#007bff' # Bleu pour le rachat de gains
+            else:
+                color = '#6c757d' # Gris pour le reste
+                
+            return f'color: white; background-color: {color}; font-weight: bold; border-radius: 4px; text-align: center;'
+
+        def style_outcome(val):
+            """ Couleur selon le résultat """
+            pos_vals = ['UP', 'YES', 'OUI', 'LONG']
+            # On gère le cas où l'outcome est None (souvent le cas sur un Redeem)
+            if val is None or str(val) == 'nan':
+                return 'color: #6c757d;'
+            
+            color = '#28a745' if str(val).upper() in pos_vals else '#dc3545'
+            return f'color: {color}; font-weight: bold;'
+
+        # Application du style
+        styled_df = df_trades.style.applymap(style_type, subset=['Type de Trade (BUY/SELL)']) \
+                                   .applymap(style_outcome, subset=['outcome']) \
+                                   .format({
+                                       'Montant (USDC)': '{:.2f} $', 
+                                       'Prix Token': '{:.4f} $',
+                                       'Date/Heure': lambda x: x.strftime('%d/%m/%Y %H:%M:%S') if not pd.isnull(x) else ""
+                                   })
+
+        # --- 4. AFFICHAGE DU TABLEAU ---
         st.dataframe(
-            df_trades, 
+            styled_df, 
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            height=800 
         )
+
+        # --- 5. LOGIQUE DE PAGINATION ---
+        total_pages = int(np.ceil(total_trades_count / config_manager.PAGE_SIZE))
+        col_prev, col_info, col_next = st.columns([1, 4, 1])
+
+        with col_prev:
+            if current_page > 1:
+                if st.button("⬅️ Précédent"):
+                    st.session_state.current_page -= 1
+                    st.rerun()
+
+        with col_info:
+            st.write(f"Page **{current_page}** sur **{max(1, total_pages)}**")
+
+        with col_next:
+            if current_page < total_pages:
+                if st.button("Suivant ➡️"):
+                    st.session_state.current_page += 1
+                    st.rerun()
+
+    # --- 6. RAFRAÎCHISSEMENT VISUEL ---
+    time.sleep(1)
+    st.rerun()
 
 
 def render_trading_params_page():
