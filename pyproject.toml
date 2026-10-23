@@ -1,0 +1,18 @@
+[project]
+name = "polymarket-copy-trading-bot"
+version = "0.2.0"
+description = "Mirror the trades of any Polymarket wallet, with a Streamlit dashboard and a headless runner."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

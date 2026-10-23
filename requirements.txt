@@ -1,1 +1,6 @@
-py-clob-client
+py-clob-client>=0.20
+streamlit>=1.50
+pandas>=2.1
+plotly>=5.20
+requests>=2.31
+python-dotenv>=1.0

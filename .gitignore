@@ -208,3 +208,5 @@ __marimo__/
 
 # Env packages
 plolymarket_env/
+# Copy trading bot runtime data (trade journal)
+data/
